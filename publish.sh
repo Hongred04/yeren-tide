@@ -123,12 +123,15 @@ for line in s:
         out.append(line)
 print('\n'.join(out).strip())
 PY
+  # 三个资产缺一不可：客户端是从 latest/download/update.js 读清单的，
+  # 只传 APK 会让新版本的清单链接 404，所有老版本都查不到这次更新。
   if HTTPS_PROXY="http://$PROXY_HOST" gh release view "$TAG" >/dev/null 2>&1; then
     echo "  · Release $TAG 已存在，只补传附件"
-    HTTPS_PROXY="http://$PROXY_HOST" gh release upload "$TAG" dist/yeren-quant.apk --clobber
+    HTTPS_PROXY="http://$PROXY_HOST" gh release upload "$TAG" \
+      dist/yeren-quant.apk dist/update.js dist/update.json --clobber
   else
     HTTPS_PROXY="http://$PROXY_HOST" gh release create "$TAG" \
-      dist/yeren-quant.apk \
+      dist/yeren-quant.apk dist/update.js dist/update.json \
       --title "野人量化 $TAG" \
       --notes-file "$NOTES_FILE"
   fi
