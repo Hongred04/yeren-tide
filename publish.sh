@@ -93,6 +93,18 @@ echo "▸ 推送"
 git -c "http.proxy=http://$PROXY_HOST" -c "https.proxy=http://$PROXY_HOST" \
   push origin HEAD --follow-tags
 
+# ---------- 4.5 清 CDN 缓存 ----------
+# jsDelivr 对分支引用有 12 小时缓存。不清的话，刚发版后用户点「检查更新」
+# 会拿到上一个版本的清单，被告知「已是最新」。客户端有「取最大版本」兜底，
+# 但主动清一次更省事。
+echo "▸ 清理 jsDelivr 缓存"
+for p in "dist/update.js" "dist/update.json" "dist/cdn/yeren-quant-$VER.apk.js"; do
+  curl -s -m 20 -x "http://$PROXY_HOST" \
+    "https://purge.jsdelivr.net/gh/Hongred04/yeren-tide@main/$p" >/dev/null 2>&1 \
+    && echo "  · $p" || echo "  · $p（清理失败，可忽略）"
+done
+echo "  注：raw.githubusercontent 自身缓存约 5 分钟，这段时间内反代源可能仍返回旧清单"
+
 # ---------- 5. Release ----------
 if command -v gh >/dev/null 2>&1; then
   echo "▸ 创建 Release"
