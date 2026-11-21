@@ -11,3 +11,8 @@
 *.png   binary
 *.apk   binary
 *.jks   binary
+
+# CDN 副本：jsDelivr 不代理 .apk（301 回 raw，国内不通），
+# 但会代理 .js。代价是这个文件其实是二进制，必须显式标 binary，
+# 否则会被 *.js text eol=lf 规则转换、每处 CRLF 少一个字节，包就废了。
+dist/*.apk.js binary
