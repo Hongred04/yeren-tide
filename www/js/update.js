@@ -47,7 +47,7 @@
    * 版本以 AndroidManifest 为唯一真源，运行时从原生读。
    * 网页预览没有 Bridge，用下面这个兜底值（build 脚本会同步）。
    */
-  var FALLBACK = { code: 15, name: '1.1.4' };
+  var FALLBACK = { code: 16, name: '1.1.5' };
 
   function current() {
     try {

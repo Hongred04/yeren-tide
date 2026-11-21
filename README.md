@@ -16,8 +16,8 @@
 | 渠道 | 说明 |
 |---|---|
 | [GitHub Releases](https://github.com/Hongred04/yeren-tide/releases/latest) | 正式发布，带版本说明 |
-| [jsDelivr 直链](https://cdn.jsdelivr.net/gh/Hongred04/yeren-tide@main/dist/yeren-quant.apk) | **国内推荐**，CDN 加速，通常比 GitHub 快一个量级 |
-| [ghfast 反代](https://ghfast.top/https://raw.githubusercontent.com/Hongred04/yeren-tide/main/dist/yeren-quant.apk) | jsDelivr 不通时用 |
+| **应用内更新** | 装好后走「设置 → 软件更新」，自动挑最快的镜像。国内推荐 |
+| [ghproxy 反代](https://ghproxy.net/https://raw.githubusercontent.com/Hongred04/yeren-tide/main/dist/yeren-quant.apk) | 手动下载，国内直连可用（实测 200） |
 
 - 最低 Android 5.0（API 23），目标 API 34，约 155 KB
 - 竖屏、无广告、无后台常驻、不申请任何多余权限
@@ -49,8 +49,24 @@ raw.githubusercontent.com          ← 直连，国内多数时候不通，最�
 装好前会检查「安装未知应用」权限，没开就带去设置页，回来再点一次即可——
 同版本的包会复用缓存，不重复下载。
 
-APK 为什么也提交进仓库：jsDelivr 会把仓库里的文件当 CDN 资源发。150KB 远低于 20MB 上限，
-于是国内能直接从 CDN 节点拉安装包，不必碰 github.com。Release 仍然发一份，作为正式渠道。
+**一个绕不开的坑**：jsDelivr 只代理前端资源，`.apk` 会被 301 回 `raw.githubusercontent.com`，
+而 raw 在国内基本不通。所以单独存一份 `dist/cdn/yeren-quant-<版本>.apk.js`，
+把二进制改成 `.js` 后缀——它才当普通资源代理。文件名带版本号是为了绕开
+jsDelivr 对固定路径的 12 小时缓存。
+
+实测各源「国内直连、不走代理」的结果（2026-11-21）：
+
+| 源 | 结果 |
+|---|---|
+| `ghproxy.net` | ✓ 200，清单与安装包都可用 |
+| `fastly.jsdelivr.net` | ✓ 200，清单与 `.apk.js` 副本可用，约 78 KB/s |
+| `gcore.jsdelivr.net` | ✓ 200 |
+| `cdn.jsdelivr.net` | ✗ 不通 |
+| `ghfast.top` | ✗ 不通 |
+| `raw.githubusercontent.com` | ✗ 不通（直连预期内） |
+
+没有一个源能覆盖所有人，所以只能全打一遍。清单还要「取版本号最大的那份」而不是
+先到先得——jsDelivr 缓存旧清单时会返回上一个版本，先到先得会让用户被告知「已是最新」。
 
 ---
 
