@@ -17,7 +17,7 @@
 |---|---|
 | [GitHub Releases](https://github.com/Hongred04/yeren-tide/releases/latest) | 正式发布，带版本说明 |
 | **应用内更新** | 装好后走「设置 → 软件更新」，自动挑最快的镜像。国内推荐 |
-| [ghproxy 反代](https://ghproxy.net/https://raw.githubusercontent.com/Hongred04/yeren-tide/main/dist/yeren-quant.apk) | 手动下载，国内直连可用（实测 200） |
+| [ghproxy 反代](https://ghproxy.net/https://github.com/Hongred04/yeren-tide/releases/latest/download/yeren-quant.apk) | 手动下载，国内直连可用（实测 200） |
 
 - 最低 Android 5.0（API 23），目标 API 34，约 155 KB
 - 竖屏、无广告、无后台常驻、不申请任何多余权限
@@ -30,43 +30,58 @@
 更新这件事在国内有两个坑：GitHub 时通时不通，WebView 又不能把文件落盘。
 所以拆成两段解决——**清单走 CDN，安装包走原生**。
 
-**清单**放仓库里的 `dist/update.js`（内容是 `window.YB_UPDATE = {...}`）。
+**清单**是一个 JS 文件（内容是 `window.YB_UPDATE = {...}`），用 `<script>` 注入读取。
 为什么不用 `fetch` 拿 JSON：页面是 `file://`，跨域到 https 会被拦；而 `<script>`
 标签不受 CORS 限制——这和整个项目拉行情用的是同一套思路。
 
-**六个源并行竞速**，谁先回用谁：
+**七个源并行，取版本号最大的那份**：
 
 ```
-jsDelivr (cdn / fastly / gcore)   ← 国内有节点，通常最快
-ghfast / ghproxy                  ← 公益反代，偶发抽风但兜得住
-raw.githubusercontent.com          ← 直连，国内多数时候不通，最后兜底
+releases/latest/download/update.js   ← 固定路径，GitHub 实时解析到最新 release
+fastly / gcore.jsdelivr.net          ← 国内有节点，快，但缓存 12 小时
+ghproxy / ghfast                     ← 反代 raw 文件，缓存约 5 分钟
+cdn.jsdelivr.net / raw.githubusercontent ← 国内多半不通，兜底
 ```
 
-不用「逐个重试」是因为每个源超时 7 秒，串行 6 个最坏要 40 秒；并行最坏也是 7 秒。
+有两个设计不是想出来的，是测出来才改的：
+
+**并行而不是逐个重试**：每个源超时 7 秒，串行七个最坏要 49 秒；并行最坏也是 7 秒。
+
+**取最大版本号，而不是谁先回用谁**：镜像是按路径缓存的，刚发版时它们会返回上一个版本。
+如果先到先得，用户点了检查更新，却被告知「已是最新」。实测同一时刻七个源返回的是
+15 / 15 / 17 / 18 四个不同版本——取最大才拿到真正的最新。
 
 **下载交给原生**（`Updater.java`）：`HttpURLConnection` 没有 CORS，镜像和 Release 直链都能用，
 逐源尝试，下到 `.part` 再改名（半包如果直接叫 `.apk`，下次会被误判成已下载）。
 装好前会检查「安装未知应用」权限，没开就带去设置页，回来再点一次即可——
 同版本的包会复用缓存，不重复下载。
 
+**下载后必须校验 sha256**。镜像缓存旧包时，新旧包的字节数可能完全一样
+（实测 157594 对 157594），只比大小会把旧版本当成新版本装上去。
+校验不过就删掉换下一个源，全部失败才报错。
+
 **一个绕不开的坑**：jsDelivr 只代理前端资源，`.apk` 会被 301 回 `raw.githubusercontent.com`，
 而 raw 在国内基本不通。所以单独存一份 `dist/cdn/yeren-quant-<版本>.apk.js`，
 把二进制改成 `.js` 后缀——它才当普通资源代理。文件名带版本号是为了绕开
 jsDelivr 对固定路径的 12 小时缓存。
 
-实测各源「国内直连、不走代理」的结果（2026-11-21）：
+实测各源「国内直连、不走代理」（2026-11-21，同一时刻）：
 
-| 源 | 结果 |
-|---|---|
-| `ghproxy.net` | ✓ 200，清单与安装包都可用 |
-| `fastly.jsdelivr.net` | ✓ 200，清单与 `.apk.js` 副本可用，约 78 KB/s |
-| `gcore.jsdelivr.net` | ✓ 200 |
-| `cdn.jsdelivr.net` | ✗ 不通 |
-| `ghfast.top` | ✗ 不通 |
-| `raw.githubusercontent.com` | ✗ 不通（直连预期内） |
+| 源 | 可达 | 返回的 versionCode |
+|---|---|---|
+| `latest/download`（经 ghproxy） | ✓ 1.6s | **18**（当时最新） |
+| `fastly.jsdelivr.net` | ✓ 1.0s | 15（缓存旧） |
+| `gcore.jsdelivr.net` | ✓ 1.1s | 15（缓存旧） |
+| `ghproxy.net`（仓库 raw 文件） | ✓ 1.1s | 17（raw 缓存） |
+| `ghfast.top` | ✗ 超时 | — |
+| `cdn.jsdelivr.net` | ✗ 不通 | — |
+| `raw.githubusercontent.com` | ✗ 不通 | — |
 
-没有一个源能覆盖所有人，所以只能全打一遍。清单还要「取版本号最大的那份」而不是
-先到先得——jsDelivr 缓存旧清单时会返回上一个版本，先到先得会让用户被告知「已是最新」。
+这张表解释了两件事：为什么必须多源（没有一个能覆盖所有人），
+以及为什么必须取最大版本（可达的三个源给出了三个不同答案）。
+
+安装包下载实测：`fastly` 的 `.apk.js` 副本约 78 KB/s，`latest/download` 经 ghproxy 约 55 KB/s，
+两者 sha256 都与清单一致。
 
 ---
 
