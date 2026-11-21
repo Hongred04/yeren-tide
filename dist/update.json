@@ -3,8 +3,9 @@
   "versionName": "1.1.4",
   "size": 157594,
   "sha256": "3ecde0f323bc5e6a2e909e802808310c2eff5334ba79bf415f40ac7e9fac68b6",
-  "releasedAt": "2026-11-21T10:31:22+08:00",
+  "releasedAt": "2026-11-21T10:51:44+08:00",
   "apk": "dist/yeren-quant.apk",
+  "apkCdn": "dist/cdn/yeren-quant-1.1.4.apk.js",
   "page": "https://github.com/Hongred04/yeren-tide/releases/latest",
   "notes": [
     "应用内检查更新：设置 → 软件更新，支持 jsDelivr / ghproxy 等多个国内镜像自动择优",

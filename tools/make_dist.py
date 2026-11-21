@@ -3,17 +3,24 @@
 """
 生成更新分发目录 dist/。
 
-做四件事：
+做五件事：
   1. 从 AndroidManifest 读版本号（唯一真源，避免两处写死后对不上）
-  2. 把 APK 复制成固定文件名 dist/yeren-quant.apk
-  3. 生成 dist/update.js —— 客户端用 <script> 注入它，天然绕过 CORS
-  4. 生成 dist/update.json —— 给人看，也给脚本用
+  2. 把 APK 复制成固定文件名 dist/yeren-quant.apk（Release / 反代用）
+  3. 再复制一份 dist/cdn/yeren-quant-<ver>.apk.js（jsDelivr 专用，见下）
+  4. 生成 dist/update.js —— 客户端用 <script> 注入它，天然绕过 CORS
+  5. 生成 dist/update.json —— 给人看，也给脚本用
 
-为什么 APK 要进仓库而不是只放 Release：
-  jsDelivr 会把仓库里的文件当 CDN 资源发。APK 只有 150KB，远低于 20MB 上限，
-  于是国内可以直接从 jsDelivr 节点下载，不必碰 github.com。
-  Release 仍然发一份，作为正式渠道和镜像全挂时的兜底。
+为什么安装包要存两份：
+  jsDelivr 只代理「前端资源」，.apk 会 301 回 raw.githubusercontent，
+  而 raw 在国内基本不通——实测 cdn.jsdelivr.net 的 APK 链接直接失败。
+  换成 .js 后缀它就当普通资源代理了（fastly / gcore 两个域名国内直连可达）。
+
+  代价是这个 .js 其实是二进制，必须在 .gitattributes 里标 binary，
+  否则被 *.js text eol=lf 规则转一次换行，每处 CRLF 少一个字节，包就废了。
+
+  文件名带版本号：jsDelivr 对固定路径有 12 小时缓存，版本化了就不用管它。
 """
+import glob
 import hashlib
 import io
 import json
@@ -27,9 +34,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, 'android', 'AndroidManifest.xml')
 BUILD_APK = os.path.join(ROOT, 'build', 'yeren-quant-v1.0.apk')
 DIST = os.path.join(ROOT, 'dist')
+CDN_DIR = os.path.join(DIST, 'cdn')
 APK_NAME = 'yeren-quant.apk'
 CHANGELOG = os.path.join(ROOT, 'CHANGELOG.md')
 REPO = 'Hongred04/yeren-tide'
+KEEP_CDN = 3
 
 
 def read_version():
@@ -80,9 +89,20 @@ def main():
 
     if not os.path.isdir(DIST):
         os.makedirs(DIST)
+    if not os.path.isdir(CDN_DIR):
+        os.makedirs(CDN_DIR)
 
     dst = os.path.join(DIST, APK_NAME)
     shutil.copyfile(src, dst)
+
+    # CDN 副本：jsDelivr 只认这个后缀，路径带版本号以规避 12 小时缓存
+    cdn_name = 'yeren-quant-%s.apk.js' % name
+    shutil.copyfile(src, os.path.join(CDN_DIR, cdn_name))
+
+    # 只留最近几个版本，避免仓库被历史安装包撑大
+    olds = sorted(glob.glob(os.path.join(CDN_DIR, 'yeren-quant-*.apk.js')))
+    for old in olds[:-KEEP_CDN] if len(olds) > KEEP_CDN else []:
+        os.remove(old)
 
     size = os.path.getsize(dst)
     digest = sha256_of(dst)
@@ -96,6 +116,7 @@ def main():
         'sha256': digest,
         'releasedAt': released,
         'apk': 'dist/' + APK_NAME,
+        'apkCdn': 'dist/cdn/' + cdn_name,
         'page': 'https://github.com/%s/releases/latest' % REPO,
         'notes': read_notes(),
     }
@@ -124,6 +145,7 @@ def main():
     print('  体积      %.0f KB' % (size / 1024.0))
     print('  sha256    %s' % digest[:32] + '…')
     print('  说明      %d 条' % len(meta['notes']))
+    print('  CDN 副本  %s' % meta['apkCdn'])
 
 
 if __name__ == '__main__':

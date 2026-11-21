@@ -4,14 +4,16 @@
  * 三个约束决定了这里的做法：
  *
  * 1) 页面是 file://（WebView 加载 assets）。file:// 发 fetch 到 https
- *    属于跨域，会话里被拦过一次。所以清单用 <script> 注入取，
- *    和 net.js 拉行情是同一套思路——script 标签不受 CORS 限制。
+ *    属于跨域，会被拦。所以清单用 <script> 注入取，和 net.js 拉行情
+ *    是同一套思路——script 标签不受 CORS 限制。
  *
- * 2) GitHub 在国内时通时不通。单一源不可靠，所以同时打多个镜像，
- *    谁先返回用谁（并行的 happy-eyeballs），全部失败才算失败。
+ * 2) GitHub 在国内时通时不通。单一源不可靠，所以同时打多个镜像。
+ *    实测过：cdn.jsdelivr.net 国内直连不通，fastly/gcore 通；
+ *    ghfast.top 不通，ghproxy.net 通。不并行就一定会有人用不了。
  *
- * 3) APK 不能由 WebView 落盘。下载和安装交给原生（AndroidBridge），
- *    JS 只负责挑源、展示进度。
+ * 3) jsDelivr 不代理 .apk（301 回 raw，国内到不了），但代理 .js。
+ *    所以安装包在仓库里另存一份 `.apk.js` 副本，放在带版本号的目录里
+ *    ——路径随版本变化，天然没有 CDN 缓存问题。
  * ============================================================ */
 (function (YB) {
   'use strict';
@@ -19,20 +21,17 @@
   /* 改仓库名只需改这一行 */
   var REPO = 'Hongred04/yeren-tide';
 
-  /* 清单放在仓库的 dist/update.js，内容是 window.YB_UPDATE = {...}
-   *
-   * 源的选择顺序按「国内可达性」排：
-   *   jsDelivr 走国内有节点，通常最快
-   *   ghfast/ghproxy 是公益反代，偶发抽风但兜得住
-   *   raw.githubusercontent 是直连，国内多数时候不通，留作最后兜底
+  /**
+   * 源按「实测国内可达性」排序。
+   * cdn=true 表示这个源只代理前端资源，取安装包要走 .apk.js 副本。
    */
   var SOURCES = [
-    { id: 'jsdelivr', base: 'https://cdn.jsdelivr.net/gh/' + REPO + '@main/' },
-    { id: 'fastly', base: 'https://fastly.jsdelivr.net/gh/' + REPO + '@main/' },
-    { id: 'gcore', base: 'https://gcore.jsdelivr.net/gh/' + REPO + '@main/' },
-    { id: 'ghfast', base: 'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/' },
-    { id: 'ghproxy', base: 'https://ghproxy.net/https://raw.githubusercontent.com/' + REPO + '/main/' },
-    { id: 'raw', base: 'https://raw.githubusercontent.com/' + REPO + '/main/' }
+    { id: 'ghproxy', base: 'https://ghproxy.net/https://raw.githubusercontent.com/' + REPO + '/main/', cdn: false },
+    { id: 'fastly', base: 'https://fastly.jsdelivr.net/gh/' + REPO + '@main/', cdn: true },
+    { id: 'gcore', base: 'https://gcore.jsdelivr.net/gh/' + REPO + '@main/', cdn: true },
+    { id: 'ghfast', base: 'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/', cdn: false },
+    { id: 'jsdelivr', base: 'https://cdn.jsdelivr.net/gh/' + REPO + '@main/', cdn: true },
+    { id: 'raw', base: 'https://raw.githubusercontent.com/' + REPO + '/main/', cdn: false }
   ];
 
   var META_PATH = 'dist/update.js';
@@ -94,36 +93,46 @@
   }
 
   /**
-   * 多源并行竞速。
+   * 多源并行，取「窗口内版本号最大」的那份。
    *
-   * 不用「逐个重试」是因为国内网络下每个源超时 7 秒，串行 6 个源最坏
-   * 要 40 秒。并行的话最坏也是 7 秒，而且快的源会先赢。
+   * 为什么不取第一个返回的：jsDelivr 对分支引用有 12 小时缓存，
+   * 刚发版时它可能返回上一个版本的清单。如果谁先回用谁，
+   * 用户点了检查更新却被告知「已是最新」。
    *
-   * 注意：多个脚本都会写 window.YB_UPDATE，后到的会覆盖先到的。
-   * 内容一样所以无害，但取值必须在 onload 当下完成。
+   * 窗口 2 秒：全部源都回来就立刻收口，否则 2 秒后用手里最好的那份。
    */
+  var WINDOW_MS = 2000;
+
   function fetchMeta() {
     return new Promise(function (resolve, reject) {
-      var settled = false;
+      var best = null;
       var left = SOURCES.length;
       var errs = [];
-      var stamp = '?t=' + Date.now();   // 破 CDN 缓存
+      var settled = false;
+      var stamp = '?t=' + Date.now();
+      var timer = setTimeout(collect, WINDOW_MS);
+
+      function collect() {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (best) resolve(best);
+        else reject(new Error(errs.join(' ') || 'all failed'));
+      }
 
       SOURCES.forEach(function (src) {
         injectOne(src.base + META_PATH + stamp, 7000).then(function () {
           var d = window.YB_UPDATE;
           if (!d || !d.versionCode) {
             errs.push(src.id + ':empty');
-            if (--left === 0 && !settled) { settled = true; reject(new Error(errs.join(' '))); }
-            return;
+          } else if (!best || d.versionCode > best.versionCode) {
+            d.__from = src.id;
+            best = d;
           }
-          if (settled) return;
-          settled = true;
-          d.__from = src.id;
-          resolve(d);
+          if (--left === 0) collect();
         }, function (e) {
           errs.push(src.id + ':' + (e && e.message || 'fail'));
-          if (--left === 0 && !settled) { settled = true; reject(new Error(errs.join(' '))); }
+          if (--left === 0) collect();
         });
       });
     });
@@ -156,7 +165,7 @@
   };
 
   /**
-   * @param {Boolean} force 忽略缓存
+   * @param {Boolean} force 忽略本地缓存
    * @returns {Promise<Object>} { hasUpdate, current, latest }
    */
   function check(force) {
@@ -210,16 +219,30 @@
   /* ---------------- 安装 ---------------- */
 
   /**
-   * APK 的所有可用地址，按源顺序。
-   * jsDelivr 把仓库里的文件当 CDN 资源发，APK 也在内（146KB 远低于 20MB 上限），
-   * 这是国内能跑满速度的那一条。
+   * 安装包的所有可用地址。
+   *
+   * 两类源取不同路径：
+   *   CDN 源 → meta.apkCdn（仓库里的 .apk.js 副本，带版本号的路径）
+   *   反代源 → meta.apk（原始 .apk）
+   * 顺序即优先级，原生会逐个试。
    */
   function apkUrls(meta) {
-    var p = (meta && meta.apk) || APK_PATH;
+    var plain = (meta && meta.apk) || APK_PATH;
+    var cdn = (meta && meta.apkCdn) || plain;
     var out = [];
+    var seen = {};
+
+    function push(meta2, p) {
+      var full = meta2.base + p;
+      if (seen[full]) return;
+      seen[full] = 1;
+      out.push(full);
+    }
+
     SOURCES.forEach(function (s) {
-      out.push(s.base + p);
+      push(s, s.cdn ? cdn : plain);
     });
+
     // 最后补 Release 直链：镜像全挂时还能搏一次
     if (meta && meta.versionName) {
       out.push('https://github.com/' + REPO + '/releases/download/v' + meta.versionName +
@@ -231,7 +254,7 @@
   /**
    * 交给原生下载并安装。
    * 原生侧逐源尝试（HttpURLConnection 没有 CORS，镜像、直链都能用），
-   * 失败会自动换下一个，比在 JS 里探测可靠。
+   * 失败自动换下一个，比在 JS 里探测可靠。
    */
   function install() {
     var meta = state.latest;
@@ -246,7 +269,7 @@
       state.stage = '正在连接…';
       state.installError = '';
       try {
-        window.AndroidBridge.installUpdate(JSON.stringify(urls));
+        window.AndroidBridge.installUpdate(JSON.stringify(urls), meta.versionCode);
         return { ok: true, mode: 'native' };
       } catch (e) {
         state.downloading = false;
@@ -289,10 +312,11 @@
     summary: summary,
     install: install,
     apkUrls: apkUrls,
+    sources: SOURCES,
     state: state,
     hasNative: hasNative,
     pageUrl: pageUrl,
-    /* 原生调用入口，命名带下划线表示内部使用 */
+    /* 原生调用的入口，下划线表示内部使用 */
     __progress: onProgress,
     __installed: onInstalled,
     __installFail: onInstallFail

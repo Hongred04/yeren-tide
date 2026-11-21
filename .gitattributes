@@ -12,7 +12,8 @@
 *.apk   binary
 *.jks   binary
 
-# CDN 副本：jsDelivr 不代理 .apk（301 回 raw，国内不通），
-# 但会代理 .js。代价是这个文件其实是二进制，必须显式标 binary，
-# 否则会被 *.js text eol=lf 规则转换、每处 CRLF 少一个字节，包就废了。
-dist/*.apk.js binary
+# CDN 副本：jsDelivr 不代理 .apk（301 回 raw，国内不通），但会代理 .js。
+# 代价是这个文件其实是二进制，必须显式标 binary，否则会被 *.js text eol=lf
+# 规则转一次换行，每处 CRLF 少一个字节——155KB 的包会变成 157586 字节，
+# 安装时报「解析包出错」。这个坑踩过一次。
+dist/cdn/* binary
