@@ -1,0 +1,26 @@
+# 构建产物
+/build/
+
+# 构建工具链（JDK + Android SDK，约 870MB，clone 后由脚本自行准备）
+/.toolchain/
+
+# 本地备份与临时文件
+*.bak
+*.orig
+/app.bak
+repo.xml
+
+# 签名密钥不入库。clone 后首次构建会自动生成新的（签名不同，无法覆盖官方包，
+# 只能自己安装；官方包始终由作者用同一把钥匙签名）
+/keystore/
+
+# build_apk.sh 每次从 www/ 生成这个副本，入库会导致两份不同步
+/android/assets/
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地开发笔记（含个人偏好与踩坑记录，不入公开库）
+/.workbuddy/

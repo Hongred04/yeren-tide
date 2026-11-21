@@ -1,0 +1,13 @@
+# 统一 LF：脚本一旦被转成 CRLF，在 Linux/macOS 上会以 "bash\r: 找不到命令" 失败
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.js    text eol=lf
+*.java  text eol=lf
+*.md    text eol=lf
+
+# 二进制文件不要做换行转换
+*.png   binary
+*.apk   binary
+*.jks   binary

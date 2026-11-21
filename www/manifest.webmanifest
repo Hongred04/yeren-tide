@@ -1,0 +1,17 @@
+{
+  "name": "野人量化 · 情绪周期与量能选股",
+  "short_name": "野人量化",
+  "description": "把野人交易体系量化为可计算指标：情绪周期、涨停池评分、月线资金流、仓位与止损硬约束。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
