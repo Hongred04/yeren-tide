@@ -367,6 +367,48 @@ console.log('\n· 软件更新页');
   U2.state.latest = null;
 }
 
+console.log('\n· 更新地址与安装调用');
+{
+  const U2 = YB.update;
+  const meta = {
+    versionCode: 99, versionName: '9.9.9', size: 1000, sha256: 'abc123',
+    apk: 'dist/yeren-quant.apk', apkCdn: 'dist/cdn/yeren-quant-9.9.9.apk.js'
+  };
+  const urls = U2.apkUrls(meta);
+
+  ok('给出多个候选源（单点必挂）', urls.length >= 6, urls.length + ' 条');
+  ok('地址无重复', new Set(urls).size === urls.length, urls.length + '/' + new Set(urls).size);
+  ok('版本化 CDN 副本排在最前',
+    /\.apk\.js$/.test(urls[0]), urls[0]);
+  ok('原始 .apk 排在后面',
+    urls.some(function (u) { return /yeren-quant\.apk$/.test(u); }), '');
+  ok('原始 .apk 不在首位', !/yeren-quant\.apk$/.test(urls[0]), urls[0]);
+  ok('末尾补了 Release 直链',
+    /releases\/download\/v9\.9\.9/.test(urls[urls.length - 1]), urls[urls.length - 1]);
+
+  /* install 必须把 sha256 交给原生，否则镜像缓存旧包会被当成新包装上去 */
+  let got = null;
+  const realBridge = global.window.AndroidBridge;
+  global.window.AndroidBridge = {
+    versionName: function () { return '1.1.4'; },
+    versionCode: function () { return 15; },
+    installUpdate: function (json, ver, sha) {
+      got = { urls: JSON.parse(json), ver: ver, sha: sha };
+    }
+  };
+  U2.state.latest = meta;
+  const r = U2.install();
+  ok('安装走原生通道', r.ok && r.mode === 'native', JSON.stringify(r));
+  ok('原生收到版本号', got && got.ver === 99, got && got.ver);
+  ok('原生收到 sha256', got && got.sha === 'abc123', got && got.sha);
+  ok('原生收到完整地址表', got && got.urls.length === urls.length, got && got.urls.length);
+
+  U2.state.downloading = false;
+  U2.state.latest = null;
+  if (realBridge === undefined) delete global.window.AndroidBridge;
+  else global.window.AndroidBridge = realBridge;
+}
+
 console.log('\n· 板块二级页');
 {
   const pool = [

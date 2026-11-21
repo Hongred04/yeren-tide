@@ -37,15 +37,17 @@ public class Updater implements Runnable {
     private final Activity act;
     private final String[] urls;
     private final int versionCode;
+    private final String wantSha;
     private final Sink sink;
 
     private volatile boolean running = true;
     private long lastEmit = 0;
 
-    public Updater(Activity act, int versionCode, String[] urls, Sink sink) {
+    public Updater(Activity act, int versionCode, String[] urls, String sha256, Sink sink) {
         this.act = act;
         this.versionCode = versionCode;
         this.urls = urls == null ? new String[0] : urls;
+        this.wantSha = sha256 == null ? "" : sha256.trim().toLowerCase();
         this.sink = sink;
     }
 
@@ -59,9 +61,42 @@ public class Updater implements Runnable {
                 new java.io.InputStreamReader(new java.io.FileInputStream(stamp), "UTF-8"));
             String line = r.readLine();
             r.close();
-            return line != null && String.valueOf(versionCode).equals(line.trim());
+            if (line == null || !String.valueOf(versionCode).equals(line.trim())) return false;
+            return shaOk(f);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * 校验安装包内容。
+     *
+     * 这一步不能省：镜像会缓存旧文件，而新旧包的大小可能完全一样
+     * （这次就是 157594 字节对 157594 字节），只比大小会把旧版本当成新版本装上去。
+     */
+    private boolean shaOk(File f) {
+        if (wantSha.isEmpty()) return true;
+        return wantSha.equals(sha256Of(f));
+    }
+
+    private static String sha256Of(File f) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            byte[] buf = new byte[16 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+            in.close();
+            byte[] out = md.digest();
+            StringBuilder sb = new StringBuilder(out.length * 2);
+            for (int i = 0; i < out.length; i++) {
+                String h = Integer.toHexString(out[i] & 0xff);
+                if (h.length() == 1) sb.append('0');
+                sb.append(h);
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
         }
     }
 
@@ -144,6 +179,12 @@ public class Updater implements Runnable {
             }
             if (dst.exists()) dst.delete();
             if (!tmp.renameTo(dst)) throw new Exception("无法写入安装包");
+
+            // 大小对了不算数：镜像缓存的旧包可能大小一样。内容不对就换下一个源。
+            if (!shaOk(dst)) {
+                dst.delete();
+                throw new Exception("内容校验失败（镜像缓存了旧包）");
+            }
             return true;
         } finally {
             if (c != null) c.disconnect();

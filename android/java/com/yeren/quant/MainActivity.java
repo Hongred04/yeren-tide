@@ -223,9 +223,10 @@ public class MainActivity extends Activity {
          *
          * @param urlsJson  候选地址的 JSON 数组，按优先级排列（镜像在前，直链兜底）
          * @param verCode   目标版本号，用于判断缓存里的包是不是同一个
+         * @param sha256    期望的内容摘要，空串表示不校验
          */
         @JavascriptInterface
-        public void installUpdate(String urlsJson, int verCode) {
+        public void installUpdate(String urlsJson, int verCode, String sha256) {
             String[] list;
             try {
                 org.json.JSONArray arr = new org.json.JSONArray(urlsJson);
@@ -237,7 +238,7 @@ public class MainActivity extends Activity {
             }
             if (updater != null) updater.cancel();
 
-            updater = new Updater(MainActivity.this, verCode, list, new Updater.Sink() {
+            updater = new Updater(MainActivity.this, verCode, list, sha256, new Updater.Sink() {
                 @Override
                 public void progress(long done, long total, String msg) {
                     callJs("__progress", done + "," + total + "," + jsonStr(msg));

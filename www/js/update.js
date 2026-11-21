@@ -47,7 +47,7 @@
    * 版本以 AndroidManifest 为唯一真源，运行时从原生读。
    * 网页预览没有 Bridge，用下面这个兜底值（build 脚本会同步）。
    */
-  var FALLBACK = { code: 16, name: '1.1.5' };
+  var FALLBACK = { code: 17, name: '1.1.6' };
 
   function current() {
     try {
@@ -221,10 +221,13 @@
   /**
    * 安装包的所有可用地址。
    *
-   * 两类源取不同路径：
-   *   CDN 源 → meta.apkCdn（仓库里的 .apk.js 副本，带版本号的路径）
+   * 两类源取不同路径，顺序也有讲究：
+   *   CDN 源 → meta.apkCdn（仓库里的 .apk.js 副本，路径带版本号）
    *   反代源 → meta.apk（原始 .apk）
-   * 顺序即优先级，原生会逐个试。
+   *
+   * 版本化副本排在前面：它不可能被 CDN 缓存成旧包。反代走的是 raw 文件，
+   * raw 自己有一层缓存，发版后几分钟内可能还吐旧内容——虽然原生会校验
+   * sha256 挡下来，但白跑一趟几十秒不值。
    */
   function apkUrls(meta) {
     var plain = (meta && meta.apk) || APK_PATH;
@@ -232,16 +235,15 @@
     var out = [];
     var seen = {};
 
-    function push(meta2, p) {
-      var full = meta2.base + p;
+    function push(s, p) {
+      var full = s.base + p;
       if (seen[full]) return;
       seen[full] = 1;
       out.push(full);
     }
 
-    SOURCES.forEach(function (s) {
-      push(s, s.cdn ? cdn : plain);
-    });
+    SOURCES.forEach(function (s) { if (s.cdn) push(s, cdn); });
+    SOURCES.forEach(function (s) { if (!s.cdn) push(s, plain); });
 
     // 最后补 Release 直链：镜像全挂时还能搏一次
     if (meta && meta.versionName) {
@@ -269,7 +271,8 @@
       state.stage = '正在连接…';
       state.installError = '';
       try {
-        window.AndroidBridge.installUpdate(JSON.stringify(urls), meta.versionCode);
+        window.AndroidBridge.installUpdate(
+          JSON.stringify(urls), meta.versionCode, meta.sha256 || '');
         return { ok: true, mode: 'native' };
       } catch (e) {
         state.downloading = false;
