@@ -1,15 +1,16 @@
 /* 由 tools/make_dist.py 生成，请勿手改 */
 window.YB_UPDATE = {
-  "versionCode": 17,
-  "versionName": "1.1.6",
+  "versionCode": 18,
+  "versionName": "1.1.7",
   "size": 157594,
-  "sha256": "6ec5c61cd6066e6a082b4486d39bfcc5c5de7f348fb5a91e794d5c202c4b28a8",
-  "releasedAt": "2026-11-21T10:56:11+08:00",
+  "sha256": "15ce371bde63ef9899ebdf3917b1c1fbed26aea3d812163a7ca3ecadb4047233",
+  "releasedAt": "2026-11-21T11:03:46+08:00",
   "apk": "dist/yeren-quant.apk",
-  "apkCdn": "dist/cdn/yeren-quant-1.1.6.apk.js",
+  "apkCdn": "dist/cdn/yeren-quant-1.1.7.apk.js",
   "page": "https://github.com/Hongred04/yeren-tide/releases/latest",
   "notes": [
-    "应用内检查更新：设置 → 软件更新，六个镜像并行择优，不再依赖 github.com 的可达性",
+    "应用内检查更新：设置 → 软件更新，多源并行择优，不再依赖 github.com 的可达性",
+    "版本清单优先走 GitHub 的 `releases/latest/download` 固定链接：资产不可变、路径固定，发版立即生效",
     "更新包由原生下载并交给系统安装器，含「允许安装未知应用」引导；同版本包复用缓存",
     "安装包在仓库内保留 CDN 副本（`dist/cdn/*.apk.js`），国内可直接从 jsDelivr 下载",
     "下载后按 sha256 校验内容：镜像会缓存旧包，新旧包大小可能完全一样，只比大小会把旧版装上去",

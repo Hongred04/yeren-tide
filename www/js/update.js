@@ -22,21 +22,35 @@
   var REPO = 'Hongred04/yeren-tide';
 
   /**
-   * 源按「实测国内可达性」排序。
-   * cdn=true 表示这个源只代理前端资源，取安装包要走 .apk.js 副本。
+   * 源按「实测国内可达性」与「时效性」排序。
+   *
+   * 第一个是 GitHub 的 `releases/latest/download/<文件>` —— 固定路径，
+   * 由 GitHub 实时解析到最新那个 release。release 资产是 immutable 的，
+   * 所以这条路上的内容永远是对的，不存在「刚发版却拿到旧清单」。
+   *
+   * 其余是仓库文件的镜像。它们有缓存：jsDelivr 对分支引用缓存 12 小时，
+   * raw 约 5 分钟。所以只能当备胎，靠「取版本号最大的一份」来纠偏。
+   *
+   * packCdn=true 表示该源只代理前端资源，取安装包要走仓库里的 .apk.js 副本
+   * （jsDelivr 看到 .apk 会 301 回 raw，国内到不了）。
    */
+  var GH_LATEST = 'https://ghproxy.net/https://github.com/' + REPO + '/releases/latest/download/';
+  var RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/';
+
   var SOURCES = [
-    { id: 'ghproxy', base: 'https://ghproxy.net/https://raw.githubusercontent.com/' + REPO + '/main/', cdn: false },
-    { id: 'fastly', base: 'https://fastly.jsdelivr.net/gh/' + REPO + '@main/', cdn: true },
-    { id: 'gcore', base: 'https://gcore.jsdelivr.net/gh/' + REPO + '@main/', cdn: true },
-    { id: 'ghfast', base: 'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/', cdn: false },
-    { id: 'jsdelivr', base: 'https://cdn.jsdelivr.net/gh/' + REPO + '@main/', cdn: true },
-    { id: 'raw', base: 'https://raw.githubusercontent.com/' + REPO + '/main/', cdn: false }
+    { id: 'release', base: GH_LATEST, meta: 'update.js', pack: 'yeren-quant.apk' },
+    { id: 'fastly', base: 'https://fastly.jsdelivr.net/gh/' + REPO + '@main/', meta: 'dist/update.js', packCdn: true },
+    { id: 'gcore', base: 'https://gcore.jsdelivr.net/gh/' + REPO + '@main/', meta: 'dist/update.js', packCdn: true },
+    { id: 'ghproxy', base: 'https://ghproxy.net/https://raw.githubusercontent.com/' + REPO + '/main/', meta: 'dist/update.js', pack: 'dist/yeren-quant.apk' },
+    { id: 'ghfast', base: 'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/', meta: 'dist/update.js', pack: 'dist/yeren-quant.apk' },
+    { id: 'jsdelivr', base: 'https://cdn.jsdelivr.net/gh/' + REPO + '@main/', meta: 'dist/update.js', packCdn: true },
+    { id: 'raw', base: RAW, meta: 'dist/update.js', pack: 'dist/yeren-quant.apk' }
   ];
 
   var META_PATH = 'dist/update.js';
   var APK_PATH = 'dist/yeren-quant.apk';
   var PAGE_URL = 'https://github.com/' + REPO + '/releases/latest';
+
 
   var CACHE_KEY = 'updateMeta';
   var CACHE_TTL = 6 * 3600 * 1000;
@@ -47,7 +61,7 @@
    * 版本以 AndroidManifest 为唯一真源，运行时从原生读。
    * 网页预览没有 Bridge，用下面这个兜底值（build 脚本会同步）。
    */
-  var FALLBACK = { code: 17, name: '1.1.6' };
+  var FALLBACK = { code: 18, name: '1.1.7' };
 
   function current() {
     try {
@@ -121,7 +135,7 @@
       }
 
       SOURCES.forEach(function (src) {
-        injectOne(src.base + META_PATH + stamp, 7000).then(function () {
+        injectOne(src.base + src.meta + stamp, 7000).then(function () {
           var d = window.YB_UPDATE;
           if (!d || !d.versionCode) {
             errs.push(src.id + ':empty');
@@ -219,31 +233,29 @@
   /* ---------------- 安装 ---------------- */
 
   /**
-   * 安装包的所有可用地址。
+   * 安装包的所有可用地址，顺序即优先级。
    *
-   * 两类源取不同路径，顺序也有讲究：
-   *   CDN 源 → meta.apkCdn（仓库里的 .apk.js 副本，路径带版本号）
-   *   反代源 → meta.apk（原始 .apk）
-   *
-   * 版本化副本排在前面：它不可能被 CDN 缓存成旧包。反代走的是 raw 文件，
-   * raw 自己有一层缓存，发版后几分钟内可能还吐旧内容——虽然原生会校验
-   * sha256 挡下来，但白跑一趟几十秒不值。
+   * release 源排第一：路径固定、内容不可变，不存在「下到旧包」的问题。
+   * 版本化 CDN 副本排第二：路径随版本变化，同样不会被缓存成旧包，而且速度快。
+   * 反代的原始 .apk 排最后：raw 自己有缓存，发版后几分钟内可能还是旧文件
+   * ——原生会校验 sha256 挡下来，但白跑一趟几十秒不值。
    */
   function apkUrls(meta) {
-    var plain = (meta && meta.apk) || APK_PATH;
-    var cdn = (meta && meta.apkCdn) || plain;
     var out = [];
     var seen = {};
 
-    function push(s, p) {
+    function push(s) {
+      var p = s.packCdn
+        ? ((meta && meta.apkCdn) || APK_PATH)
+        : (s.pack || (meta && meta.apk) || APK_PATH);
       var full = s.base + p;
       if (seen[full]) return;
       seen[full] = 1;
       out.push(full);
     }
 
-    SOURCES.forEach(function (s) { if (s.cdn) push(s, cdn); });
-    SOURCES.forEach(function (s) { if (!s.cdn) push(s, plain); });
+    // release 源先走（库里带出的顺序就是优先级）
+    SOURCES.forEach(push);
 
     // 最后补 Release 直链：镜像全挂时还能搏一次
     if (meta && meta.versionName) {

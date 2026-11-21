@@ -378,11 +378,12 @@ console.log('\n· 更新地址与安装调用');
 
   ok('给出多个候选源（单点必挂）', urls.length >= 6, urls.length + ' 条');
   ok('地址无重复', new Set(urls).size === urls.length, urls.length + '/' + new Set(urls).size);
-  ok('版本化 CDN 副本排在最前',
-    /\.apk\.js$/.test(urls[0]), urls[0]);
-  ok('原始 .apk 排在后面',
-    urls.some(function (u) { return /yeren-quant\.apk$/.test(u); }), '');
-  ok('原始 .apk 不在首位', !/yeren-quant\.apk$/.test(urls[0]), urls[0]);
+  ok('排第一的是 release 最新资产（固定路径、内容不可变）',
+    /releases\/latest\/download\/yeren-quant\.apk$/.test(urls[0]), urls[0]);
+  ok('有走 .apk.js 的 CDN 副本（jsDelivr 不代理 .apk）',
+    urls.some(function (u) { return /\.apk\.js$/.test(u); }), '');
+  ok('有仓库原始 .apk 通道',
+    urls.some(function (u) { return /\/dist\/yeren-quant\.apk$/.test(u); }), '');
   ok('末尾补了 Release 直链',
     /releases\/download\/v9\.9\.9/.test(urls[urls.length - 1]), urls[urls.length - 1]);
 
